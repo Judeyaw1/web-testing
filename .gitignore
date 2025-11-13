@@ -36,3 +36,5 @@ coverage/
 *.tmp
 *.temp
 
+# Authentication state (remember device)
+.auth/

@@ -1,17 +1,57 @@
 import { test as base } from '@playwright/test';
+import * as fs from 'fs';
+import * as path from 'path';
+
+const STORAGE_STATE_PATH = path.resolve(__dirname, '../.auth/storage-state.json');
 
 type AuthFixture = {
   login: () => Promise<void>;
 };
 
 export const test = base.extend<AuthFixture>({
-  login: async ({ page }, use) => {
+  login: async ({ page, context }, use) => {
+    // Check if we should use saved storage state (remember device)
+    const useSavedState = (process.env.E2E_USE_SAVED_STATE || 'true').toLowerCase() !== 'false';
+    
+    if (useSavedState && fs.existsSync(STORAGE_STATE_PATH)) {
+      console.log('✅ Using saved authentication state (remember device enabled)');
+      try {
+        const storageState = JSON.parse(fs.readFileSync(STORAGE_STATE_PATH, 'utf-8'));
+        await context.addCookies(storageState.cookies || []);
+        
+        // Verify the saved state still works
+        await page.goto('/upload', { waitUntil: 'domcontentloaded' });
+        await page.waitForTimeout(2000);
+        
+        const currentUrl = page.url();
+        // If we're redirected to login, the saved state expired - need to login again
+        if (currentUrl.includes('/login') || currentUrl.includes('/signin')) {
+          console.log('⚠️  Saved authentication state expired, logging in again...');
+          // Continue to login flow below
+        } else {
+          // Saved state works! Skip login
+          console.log('✅ Saved authentication state is valid, skipping login');
+          await use(async () => {});
+          return;
+        }
+      } catch (error) {
+        console.log('⚠️  Error loading saved state, logging in fresh...', error);
+        // Continue to login flow below
+      }
+    }
+
     if ((process.env.E2E_INTERACTIVE_LOGIN || '').toLowerCase() === 'true' || process.env.E2E_INTERACTIVE_LOGIN === '1') {
       await navigateToLogin(page);
       // Prefill to counter fast refresh loops, but let you review before submit
       await stabilizeAndPrefillLogin(page, process.env.E2E_EMAIL ?? 'judeyawosafo1473@gmail.com', process.env.E2E_PASSWORD ?? 'Silicon123');
       await page.pause();
       await page.waitForURL(/\/(dashboard|upload)/, { timeout: 300000 });
+      
+      // Save authentication state after interactive login
+      if (useSavedState) {
+        await saveStorageState(context);
+      }
+      
       await use(async () => {});
       return;
     }
@@ -63,9 +103,31 @@ export const test = base.extend<AuthFixture>({
       }
     }
     await page.waitForURL(/\/(dashboard|upload)/, { timeout: 180000 }); // 3 minutes for OTP + navigation
+    
+    // Save authentication state after successful login (remember device)
+    if (useSavedState) {
+      await saveStorageState(context);
+    }
+    
     await use(async () => {});
   },
 });
+
+async function saveStorageState(context: import('@playwright/test').BrowserContext): Promise<void> {
+  try {
+    // Ensure directory exists
+    const dir = path.dirname(STORAGE_STATE_PATH);
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true });
+    }
+    
+    // Save storage state
+    await context.storageState({ path: STORAGE_STATE_PATH });
+    console.log('✅ Authentication state saved (device remembered)');
+  } catch (error) {
+    console.log('⚠️  Failed to save authentication state:', error);
+  }
+}
 
 export const expect = test.expect;
 
@@ -131,7 +193,7 @@ async function completeOtpIfConfigured(page: import('@playwright/test').Page): P
     await page.waitForTimeout(2000);
     
     // Try single field first with extended timeout
-    const singleField = await waitForAny(page, getOtpSingleFieldSelectors(), 15000).catch(() => undefined);
+    const singleField = await waitForAny(page, getOtpSingleFieldSelectors(), 13000).catch(() => undefined);
     if (singleField) {
       await page.fill(singleField, code);
       await page.waitForTimeout(1000);
@@ -164,7 +226,7 @@ async function completeOtpIfConfigured(page: import('@playwright/test').Page): P
     
     // Click verify button with extended timeout
     await page.waitForTimeout(1000);
-    const verifyBtn = await waitForAny(page, getOtpSubmitSelectorCandidates(), 15000).catch(() => undefined);
+    const verifyBtn = await waitForAny(page, getOtpSubmitSelectorCandidates(), 13000).catch(() => undefined);
     if (verifyBtn) {
       await page.click(verifyBtn);
       // Wait longer after clicking verify to allow navigation

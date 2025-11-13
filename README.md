@@ -18,21 +18,30 @@ Comprehensive **end-to-end testing** framework for [GrabDocs.com](https://app.gr
 
 ## 🎯 Overview
 
-This testing suite provides automated end-to-end testing for GrabDocs, focusing on **13 critical tests** that validate core functionality:
+This testing suite provides automated end-to-end testing for GrabDocs, focusing on **25 tests** (20 with @critical tag) that validate core functionality:
 
-- **Authentication** (4 tests): Login, invalid credentials, logout, session persistence
+- **Authentication** (2 tests): Login/logout/invalid login flow, session persistence
 - **Document Management** (6 tests): Upload, search, preview, download, sharing, empty state
-- **Chat/AI Interaction** (1 test): Message sending and response validation
+- **Chat/AI Interaction** (2 tests): Message sending/response, export conversation
+- **Chat History** (2 tests): View conversations, delete conversation
+- **Analytics** (2 tests): View analytics page, export data
+- **Calendar** (2 tests): View calendar, create event
+- **Forms** (1 test): Create form from template
+- **Links** (1 test): Create quick link
+- **Reach/Meetings** (3 tests): Create meeting, schedule meeting, start meeting
+- **Workspace** (1 test): Create workspace
 - **Accessibility** (1 test): WCAG 2.1 compliance
-- **Security** (1 test): HTTPS enforcement
+- **Security** (2 tests): HTTPS enforcement, 404 error handling
 
 ## ✨ Features
 
 - ✅ **Automated OTP Handling**: Auto-fills OTP code or supports manual entry
+- ✅ **Remember Device**: Saves authentication state to skip OTP on subsequent runs
+- ✅ **Video Recording**: All tests are recorded and viewable in HTML reports
 - ✅ **Flexible Selectors**: Auto-detects form fields and UI elements
 - ✅ **Comprehensive Reporting**: HTML reports with screenshots, videos, and traces
 - ✅ **Accessibility Testing**: Built-in axe-core integration for WCAG compliance
-- ✅ **Multiple Browser Support**: Chromium and Google Chrome
+- ✅ **Browser Support**: Chromium (fast and reliable)
 - ✅ **Environment Configuration**: Easy switching between environments
 - ✅ **Test Tagging**: Organized test execution by category
 
@@ -138,6 +147,9 @@ E2E_LOGIN_EMAIL_SELECTOR='input[name="email"]'
 E2E_LOGIN_PASSWORD_SELECTOR='input[name="password"]'
 E2E_LOGIN_SUBMIT_SELECTOR='button[type="submit"]'
 
+# Remember Device (skip OTP on subsequent runs)
+E2E_USE_SAVED_STATE="true"                # Default: "true" - saves auth state to .auth/storage-state.json
+
 # Performance Testing
 E2E_SLOWMO=100                            # Slow down actions (ms)
 
@@ -149,23 +161,21 @@ E2E_INTERACTIVE_LOGIN=1                   # Pause at login for review
 
 The main configuration is in `playwright.config.ts`:
 
-- **Base URL**: Set via `E2E_BASE_URL` environment variable
-- **Timeout**: 3 minutes (180 seconds) for tests with OTP
+- **Base URL**: Set via `E2E_BASE_URL` environment variable (default: `https://app.grabdocs.com`)
+- **Timeout**: 3 minutes (180000ms) for tests with OTP
 - **Retries**: 2 retries in CI, 0 locally
-- **Workers**: 1 worker for stability
-- **Projects**: Chromium and Google Chrome
+- **Workers**: 1 worker in CI, parallel locally (auto-detected)
+- **Projects**: Chromium only (for faster, consistent test execution)
+- **Video Recording**: Enabled for all tests (`video: 'on'`) - viewable in HTML reports
+- **Storage State**: Saves authentication state to `.auth/storage-state.json` (remember device)
+- **SlowMo**: Configurable via `E2E_SLOWMO` environment variable (ms)
 
-### Browser Projects
+### Browser Configuration
 
-Two browser projects are configured:
-
-1. **Chromium** (default): Bundled Chromium browser
-2. **Google Chrome**: Your system's Chrome installation
-
-Run specific browser:
-```bash
-npx playwright test --project="Google Chrome"
-```
+**Chromium** is the only configured browser project:
+- Bundled Chromium browser (comes with Playwright)
+- Fast and reliable test execution
+- Consistent results across environments
 
 ## ▶️ Running Tests
 
@@ -179,6 +189,28 @@ npm run test:e2e
 npm run test:headed
 ```
 
+### Run with Advanced Options
+
+```bash
+# Full command with environment variables and options
+cd /Users/jude.osafo/Downloads/grabdocs-e2e && \
+E2E_BASE_URL="https://app.grabdocs.com" \
+E2E_LOGIN_PATH="/login" \
+npx playwright test --project=Chromium --headed --workers=1
+
+# Shorter version (if .env file is configured)
+npm run test:headed -- --project=Chromium --workers=1
+
+# Run with single worker (sequential execution, better for debugging)
+npx playwright test --workers=1 --headed
+```
+
+**Options Explained:**
+- `--workers=1`: Run tests sequentially (one at a time) - more stable for debugging
+- `--headed`: Run with visible browser window
+- Environment variables can be set inline or via `.env` file
+- Tests run on Chromium browser only (configured in `playwright.config.ts`)
+
 ### Run by Test File
 
 ```bash
@@ -190,6 +222,27 @@ npx playwright test tests/functional-document.spec.ts --headed
 
 # Chat tests
 npx playwright test tests/functional-chat.spec.ts --headed
+
+# Chat History tests
+npx playwright test tests/functional-chat-history.spec.ts --headed
+
+# Analytics tests
+npx playwright test tests/functional-analytics.spec.ts --headed
+
+# Calendar tests
+npx playwright test tests/functional-calendar.spec.ts --headed
+
+# Forms tests
+npx playwright test tests/functional-forms.spec.ts --headed
+
+# Links tests
+npx playwright test tests/functional-links.spec.ts --headed
+
+# Reach/Meetings tests
+npx playwright test tests/functional-reach.spec.ts --headed
+
+# Workspace tests
+npx playwright test tests/functional-workspace.spec.ts --headed
 
 # Accessibility tests
 npx playwright test tests/ui-accessibility.spec.ts --headed
@@ -246,11 +299,18 @@ grabdocs-e2e/
 │   │   └── security.ts          # Security testing utilities
 │   ├── assets/
 │   │   └── sample.pdf           # Test file for uploads
-│   ├── auth.spec.ts             # Authentication tests (4 tests)
+│   ├── auth.spec.ts             # Authentication tests (2 tests)
 │   ├── functional-document.spec.ts  # Document tests (6 tests)
-│   ├── functional-chat.spec.ts      # Chat tests (1 test)
-│   ├── ui-accessibility.spec.ts     # Accessibility tests (1 test)
-│   └── security.spec.ts         # Security tests (1 test)
+│   ├── functional-chat.spec.ts      # Chat tests (2 tests)
+│   ├── functional-chat-history.spec.ts  # Chat history tests (2 tests)
+│   ├── functional-analytics.spec.ts     # Analytics tests (2 tests)
+│   ├── functional-calendar.spec.ts      # Calendar tests (2 tests)
+│   ├── functional-forms.spec.ts         # Forms tests (1 test)
+│   ├── functional-links.spec.ts        # Links tests (1 test)
+│   ├── functional-reach.spec.ts        # Reach/Meetings tests (3 tests)
+│   ├── functional-workspace.spec.ts    # Workspace tests (1 test)
+│   ├── ui-accessibility.spec.ts        # Accessibility tests (1 test)
+│   └── security.spec.ts         # Security tests (2 tests)
 └── test-results/                # Test reports and artifacts
 ```
 
@@ -258,32 +318,19 @@ grabdocs-e2e/
 
 ### Authentication Tests (`tests/auth.spec.ts`)
 
-#### 1. Login with valid credentials @critical
-- **Purpose**: Validates successful login flow with OTP
+**Total: 2 tests**
+
+#### 1. Login, logout, then invalid login @critical @functional @regression @smoke
+- **Purpose**: Validates complete authentication flow including login, logout, and invalid login handling
 - **Steps**: 
-  - Navigate to login page
-  - Fill email and password
-  - Auto-fill OTP code
-  - Verify navigation to dashboard/upload page
-- **Expected**: Successfully logged in and redirected
+  - Login with correct credentials (auto-fills OTP)
+  - Verify successful login and navigation
+  - Logout and verify redirect to login page
+  - Attempt login with invalid credentials
+  - Verify error message is displayed
+- **Expected**: Successful login, logout, and proper error handling for invalid credentials
 
-#### 2. Invalid login shows error message @critical
-- **Purpose**: Validates error handling for invalid credentials
-- **Steps**:
-  - Navigate to login page
-  - Enter invalid email/password
-  - Submit form
-- **Expected**: Error message displayed (alert, toast, or error text)
-
-#### 3. Logout functionality @critical
-- **Purpose**: Validates logout process
-- **Steps**:
-  - Login successfully
-  - Click logout button
-  - Verify redirect to login page
-- **Expected**: Logged out and redirected to login
-
-#### 4. Session persistence after refresh @critical
+#### 2. Session persistence after refresh @critical
 - **Purpose**: Validates session remains active after page refresh
 - **Steps**:
   - Login successfully
@@ -292,6 +339,8 @@ grabdocs-e2e/
 - **Expected**: Session persists after refresh
 
 ### Document Management Tests (`tests/functional-document.spec.ts`)
+
+**Total: 6 tests** (Upload, Search, Preview, Download, Empty State, Sharing)
 
 #### 5. Upload PDF document @critical
 - **Purpose**: Validates document upload functionality
@@ -343,18 +392,175 @@ grabdocs-e2e/
 
 ### Chat/AI Tests (`tests/functional-chat.spec.ts`)
 
+**Total: 2 tests**
+
 #### 11. Chat/AI interaction sends message and receives response @critical
-- **Purpose**: Validates chat/AI functionality
+- **Purpose**: Validates chat/AI functionality and UI elements
 - **Steps**:
   - Navigate to upload page
-  - Find chat input field
+  - Verify chat input UI exists and is enabled
   - Send a message
-  - Verify response area appears
-- **Expected**: Message sent and response area visible
+  - Verify message was sent (functionality check)
+  - Verify response area appears (UI check)
+  - Verify AI response content (functionality check)
+- **Expected**: Chat UI visible, message sent successfully, response area appears with content
+
+#### 12. Export or download conversation @functional
+- **Purpose**: Validates conversation export/download functionality
+- **Steps**:
+  - Navigate to upload page
+  - Send a test message to create conversation
+  - Look for export/download button (checks multiple locations and menus)
+  - Click export button
+  - Verify download starts or export modal appears
+  - Verify file has valid name and extension
+- **Expected**: Export button found, download initiated with valid file, or export modal displayed
+- **Note**: Test skips gracefully if export feature is not available
+
+### Chat History Tests (`tests/functional-chat-history.spec.ts`)
+
+**Total: 2 tests**
+
+#### 13. View chat history page and conversations @critical
+- **Purpose**: Validates chat history page loads and displays conversations
+- **Steps**:
+  - Navigate to chat history page
+  - Verify page loads correctly
+  - Verify conversations are displayed
+- **Expected**: Chat history page loads and shows existing conversations
+
+#### 14. Delete chat conversation @functional
+- **Purpose**: Validates deletion of chat conversations
+- **Steps**:
+  - Navigate to chat history page
+  - Find a conversation to delete
+  - Click delete button/icon
+  - Refresh page and verify conversation is removed
+- **Expected**: Conversation deleted and no longer visible after refresh
+
+### Analytics Tests (`tests/functional-analytics.spec.ts`)
+
+**Total: 2 tests**
+
+#### 15. Navigate to Analytics page and view data @critical
+- **Purpose**: Validates analytics page loads and displays data
+- **Steps**:
+  - Navigate to analytics page (`/analysis`)
+  - Verify page loads correctly
+  - Verify analytics data/charts are visible
+- **Expected**: Analytics page loads and displays data
+
+#### 16. Export analytics data @functional
+- **Purpose**: Validates analytics data export functionality
+- **Steps**:
+  - Navigate to analytics page
+  - Find export button/option
+  - Click export and verify download or export modal
+- **Expected**: Analytics data can be exported successfully
+
+### Calendar Tests (`tests/functional-calendar.spec.ts`)
+
+**Total: 2 tests**
+
+#### 17. View calendar page @critical
+- **Purpose**: Validates calendar page loads correctly
+- **Steps**:
+  - Navigate to calendar page
+  - Verify calendar UI is visible
+  - Verify calendar displays correctly
+- **Expected**: Calendar page loads and displays calendar interface
+
+#### 18. Add new event and confirm creation @critical
+- **Purpose**: Validates event creation functionality
+- **Steps**:
+  - Navigate to calendar page
+  - Click to add new event
+  - Fill event details (title, date, time)
+  - Click "Create Event" button
+  - Refresh page and verify event appears in calendar
+- **Expected**: Event created successfully and visible in calendar after refresh
+
+### Forms Tests (`tests/functional-forms.spec.ts`)
+
+**Total: 1 test**
+
+#### 19. Open forms, select template, and create form @critical
+- **Purpose**: Validates form creation from template
+- **Steps**:
+  - Navigate to forms page (`/forms`)
+  - Select a form template
+  - Click on template to open form builder
+  - Click "Save Form" icon/button
+  - Refresh page and verify form appears in list
+- **Expected**: Form created from template and saved successfully
+
+### Links Tests (`tests/functional-links.spec.ts`)
+
+**Total: 1 test**
+
+#### 20. Create new link and verify it was created @critical
+- **Purpose**: Validates quick link creation functionality
+- **Steps**:
+  - Navigate to links page (`/quick-links`)
+  - Click "Create Link" button
+  - Fill link form (URL, title, description)
+  - Click "Create Link" to save
+  - Refresh page and verify link appears in list
+- **Expected**: Link created successfully and visible in list after refresh
+
+### Reach/Meetings Tests (`tests/functional-reach.spec.ts`)
+
+**Total: 3 tests**
+
+#### 21. Create meeting and verify it was created @critical
+- **Purpose**: Validates meeting creation functionality
+- **Steps**:
+  - Navigate to video-meeting page (`/video-meeting`)
+  - Click "Create Meeting" button
+  - Fill meeting form (optional title)
+  - Click "Create Meeting" to save
+  - Refresh page and verify meeting appears in list
+- **Expected**: Meeting created successfully and visible in list after refresh
+
+#### 22. Schedule meeting and verify it was scheduled @critical
+- **Purpose**: Validates meeting scheduling functionality
+- **Steps**:
+  - Navigate to video-meeting page
+  - Click "Schedule Meeting" button
+  - Fill meeting form (title, date, time)
+  - Click "Schedule Meeting" to save
+  - Refresh page and verify scheduled meeting appears
+- **Expected**: Meeting scheduled successfully and visible in list after refresh
+
+#### 23. Start meeting by clicking start meeting icon @critical
+- **Purpose**: Validates starting a meeting from the meetings list
+- **Steps**:
+  - Create a meeting first
+  - Refresh page to see the created meeting
+  - Find the meeting in the list
+  - Click the start meeting icon/button
+  - Verify meeting interface loads
+- **Expected**: Meeting starts successfully and meeting interface is visible
+
+### Workspace Tests (`tests/functional-workspace.spec.ts`)
+
+**Total: 1 test**
+
+#### 24. Create workspace and verify it was created @critical
+- **Purpose**: Validates workspace creation functionality
+- **Steps**:
+  - Navigate to workspaces page (`/workspaces`)
+  - Click "Create Workspace" button
+  - Fill workspace form (name, description)
+  - Click "Create" button to save
+  - Refresh page and verify workspace appears in list
+- **Expected**: Workspace created successfully and visible in list after refresh
 
 ### Accessibility Tests (`tests/ui-accessibility.spec.ts`)
 
-#### 12. Login page accessibility @critical
+**Total: 1 test**
+
+#### 25. Login page accessibility @critical
 - **Purpose**: Validates WCAG 2.1 Level A compliance
 - **Checks**:
   - Form labels present
@@ -366,12 +572,24 @@ grabdocs-e2e/
 
 ### Security Tests (`tests/security.spec.ts`)
 
-#### 13. HTTPS enforcement @critical
+**Total: 2 tests**
+
+#### 26. HTTPS enforcement @critical
 - **Purpose**: Validates secure connection
 - **Steps**:
   - Navigate to login page
   - Verify URL uses HTTPS
 - **Expected**: All connections use HTTPS protocol
+
+#### 27. 404 error page displays correctly @functional @security
+- **Purpose**: Validates error handling for invalid URLs
+- **Steps**:
+  - Navigate to non-existent page
+  - Check HTTP response status (404)
+  - Verify 404 page content/UI elements are displayed
+  - Verify page handles error gracefully
+- **Expected**: 404 status code or 404 page content visible, or redirects to home page
+- **Note**: Accepts both explicit 404 pages and redirects to home (both are valid)
 
 ## 🔍 Troubleshooting
 
@@ -549,9 +767,11 @@ The report includes:
 - Test execution summary
 - Pass/fail status
 - Screenshots on failure
-- Video recordings
+- **Video recordings for all tests** (click on any test to view the video)
 - Performance metrics
 - Trace files
+
+**Note**: All tests are recorded with video by default. Click on any test in the HTML report to view the video recording of what happened during the test execution.
 
 ### Report Location
 
@@ -571,8 +791,11 @@ Provides `login` fixture that handles:
 - Navigation to login page
 - Form filling (email/password)
 - OTP handling (auto-fill or manual)
-- Session management
+- **Session persistence** (saves authentication state to `.auth/storage-state.json`)
+- **Remember device** (reuses saved session to skip OTP on subsequent runs)
 - Error handling
+
+**Remember Device Feature**: After the first successful login (which may include OTP), the authentication state is saved. On subsequent test runs, the saved state is reused, allowing tests to skip the login/OTP flow. Set `E2E_USE_SAVED_STATE="false"` to disable this feature.
 
 **Usage**:
 ```typescript
