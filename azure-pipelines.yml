@@ -1,21 +1,49 @@
-# Node.js
-# Build a general Node.js project with npm.
-# Add steps that analyze code, save build artifacts, deploy, and more:
-# https://docs.microsoft.com/azure/devops/pipelines/languages/javascript
+# Azure DevOps Pipeline for GrabDocs E2E Tests
+# This pipeline runs Playwright end-to-end tests
 
 trigger:
-- main
+  - main
 
 pool:
   vmImage: ubuntu-latest
 
 steps:
-- task: NodeTool@0
-  inputs:
-    versionSpec: '20.x'
-  displayName: 'Install Node.js'
+  - task: NodeTool@0
+    inputs:
+      versionSpec: '20.x'
+    displayName: 'Install Node.js'
 
-- script: |
-    npm install
-    npm run build
-  displayName: 'npm install and build'
+  - script: |
+      npm install
+    displayName: 'Install dependencies'
+
+  - script: |
+      npx playwright install --with-deps chromium
+    displayName: 'Install Playwright browsers'
+
+  - script: |
+      npm run test:e2e
+    displayName: 'Run E2E tests'
+    env:
+      E2E_BASE_URL: $(E2E_BASE_URL)
+      E2E_LOGIN_PATH: $(E2E_LOGIN_PATH)
+      E2E_EMAIL: $(E2E_EMAIL)
+      E2E_PASSWORD: $(E2E_PASSWORD)
+      E2E_OTP_CODE: $(E2E_OTP_CODE)
+      E2E_OTP_MODE: $(E2E_OTP_MODE)
+      E2E_USE_SAVED_STATE: $(E2E_USE_SAVED_STATE)
+    continueOnError: true
+
+  - task: PublishBuildArtifacts@1
+    condition: always()
+    inputs:
+      pathToPublish: 'playwright-report'
+      artifactName: 'playwright-report'
+    displayName: 'Upload Playwright HTML report'
+
+  - task: PublishBuildArtifacts@1
+    condition: always()
+    inputs:
+      pathToPublish: 'test-results'
+      artifactName: 'test-results'
+    displayName: 'Upload test results (videos, screenshots)'
