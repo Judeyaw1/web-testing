@@ -43,7 +43,7 @@ export const test = base.extend<AuthFixture>({
     if ((process.env.E2E_INTERACTIVE_LOGIN || '').toLowerCase() === 'true' || process.env.E2E_INTERACTIVE_LOGIN === '1') {
       await navigateToLogin(page);
       // Prefill to counter fast refresh loops, but let you review before submit
-      await stabilizeAndPrefillLogin(page, process.env.E2E_EMAIL ?? 'judeyawosafo1473@gmail.com', process.env.E2E_PASSWORD ?? 'Silicon123');
+      await stabilizeAndPrefillLogin(page, process.env.E2E_EMAIL ?? 'Jude', process.env.E2E_PASSWORD ?? 'Silicon123');
       await page.pause();
       await page.waitForURL(/\/(dashboard|upload)/, { timeout: 300000 });
       
@@ -94,7 +94,7 @@ export const test = base.extend<AuthFixture>({
       throw new Error(`Login form not found. Tried paths ${candidateLoginPaths.join(', ')} on baseURL ${base}. Set E2E_BASE_URL if your app uses a different host or route.`);
     }
 
-    await fillLoginForm(page, process.env.E2E_EMAIL ?? 'judeyawosafo1473@gmail.com', process.env.E2E_PASSWORD ?? 'Silicon123');
+    await fillLoginForm(page, process.env.E2E_EMAIL ?? 'Jude', process.env.E2E_PASSWORD ?? 'Silicon123');
     const reachedDashboard = await waitForDashboardOrVerification(page, 20000);
     if (!reachedDashboard) {
       const completed = await completeOtpIfConfigured(page);
