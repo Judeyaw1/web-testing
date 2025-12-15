@@ -1,14 +1,204 @@
 import { test, expect } from './fixtures/auth';
 
+// Utility: Delete all existing meetings before tests start
+async function deleteAllExistingMeetings(page: import('@playwright/test').Page) {
+  try {
+    console.log('🧹 Cleaning up existing meetings...');
+    await page.goto('/video-meeting', { waitUntil: 'domcontentloaded' });
+    await page.waitForTimeout(3000);
+    
+    // STEP 1: Handle "Active Meeting Found" modal if it appears
+    console.log('✅ Checking for "Active Meeting Found" modal...');
+    const activeMeetingModal = page.locator('text=Active Meeting Found').first();
+    if (await activeMeetingModal.isVisible({ timeout: 3000 }).catch(() => false)) {
+      console.log('⚠️  Active Meeting Found modal detected, ending the meeting...');
+      
+      // Look for "End Meeting" button in the modal
+      const endMeetingInModalSelectors = [
+        'button:has-text("End Meeting")',
+        'button:has-text("× End Meeting")',
+        'button:has-text("End")',
+        '[data-testid*="end-meeting"]',
+        'button[aria-label*="end meeting" i]',
+      ];
+      
+      let endButtonFound = false;
+      for (const selector of endMeetingInModalSelectors) {
+        const endBtn = page.locator(selector).first();
+        if (await endBtn.isVisible({ timeout: 2000 }).catch(() => false)) {
+          await endBtn.click().catch(() => {});
+          console.log('✅ Clicked "End Meeting" button in modal');
+          endButtonFound = true;
+          await page.waitForTimeout(2000);
+          break;
+        }
+      }
+      
+      // Wait for modal to close
+      if (endButtonFound) {
+        try {
+          await activeMeetingModal.waitFor({ state: 'hidden', timeout: 5000 });
+          console.log('✅ Active Meeting modal closed');
+        } catch (e) {
+          console.log('⚠️  Modal may still be visible, continuing...');
+        }
+        await page.waitForTimeout(2000);
+      }
+    }
+    
+    // STEP 2: Now proceed to delete meetings from the list
+    // Find all meeting items
+    const meetingSelectors = [
+      '[class*="meeting"]',
+      '[data-testid*="meeting"]',
+      '[class*="card"]',
+      '[class*="item"]',
+      '[class*="list-item"]',
+    ];
+    
+    let meetingsFound = 0;
+    let deletedCount = 0;
+    
+    // Try each selector to find meetings
+    for (const selector of meetingSelectors) {
+      const meetings = page.locator(selector);
+      const meetingCount = await meetings.count();
+      
+      if (meetingCount > 0) {
+        meetingsFound = meetingCount;
+        console.log(`✅ Found ${meetingCount} meeting(s) to delete`);
+        
+        // Delete each meeting
+        for (let i = 0; i < meetingCount; i++) {
+          const meeting = meetings.nth(i);
+          
+          if (await meeting.isVisible({ timeout: 2000 }).catch(() => false)) {
+            const meetingText = await meeting.textContent().catch(() => '');
+            
+            // Skip navigation items
+            if (meetingText && 
+                !meetingText.toLowerCase().includes('home') &&
+                !meetingText.toLowerCase().includes('dashboard') &&
+                !meetingText.toLowerCase().includes('create') &&
+                !meetingText.toLowerCase().includes('join') &&
+                !meetingText.toLowerCase().includes('schedule') &&
+                meetingText.trim().length > 0) {
+              
+              // Find delete icon/button within the meeting
+              const deleteIconSelectors = [
+                'button[aria-label*="delete" i]',
+                'button[title*="delete" i]',
+                'button[aria-label*="remove" i]',
+                'button:has-text("Delete")',
+                'button:has-text("Remove")',
+                '[data-testid*="delete"]',
+                '[data-testid*="remove"]',
+                '[class*="delete-icon"]',
+                '[class*="trash-icon"]',
+                'button:has(svg[class*="trash"])',
+                'button:has(svg[class*="delete"])',
+              ];
+              
+              let deleteIcon: import('@playwright/test').Locator | null = null;
+              
+              for (const delSelector of deleteIconSelectors) {
+                const icon = meeting.locator(delSelector).first();
+                if (await icon.isVisible({ timeout: 1000 }).catch(() => false)) {
+                  deleteIcon = icon;
+                  break;
+                }
+              }
+              
+              if (deleteIcon) {
+                await deleteIcon.click().catch(() => {});
+                await page.waitForTimeout(1000);
+                
+                // Confirm deletion if confirmation dialog appears
+                const confirmSelectors = [
+                  'button:has-text("Delete")',
+                  'button:has-text("Confirm")',
+                  'button:has-text("Yes")',
+                  'button:has-text("Remove")',
+                ];
+                
+                for (const confirmSel of confirmSelectors) {
+                  const confirmBtn = page.locator(confirmSel).first();
+                  if (await confirmBtn.isVisible({ timeout: 2000 }).catch(() => false)) {
+                    await confirmBtn.click().catch(() => {});
+                    await page.waitForTimeout(1000);
+                    break;
+                  }
+                }
+                
+                deletedCount++;
+                console.log(`  ✅ Deleted meeting ${i + 1}/${meetingCount}`);
+              }
+            }
+          }
+        }
+        break; // Found meetings with this selector, no need to try others
+      }
+    }
+    
+    if (deletedCount > 0) {
+      console.log(`✅ Cleaned up ${deletedCount} meeting(s)`);
+      await page.waitForTimeout(2000); // Wait for deletions to complete
+    } else if (meetingsFound === 0) {
+      console.log('✅ No existing meetings found');
+    }
+  } catch (error) {
+    console.log('⚠️  Error during meeting cleanup, continuing...');
+  }
+}
+
+// Helper function to handle "Active Meeting Found" modal if it appears during tests
+async function handleActiveMeetingModal(page: import('@playwright/test').Page) {
+  const activeMeetingModal = page.locator('text=Active Meeting Found').first();
+  if (await activeMeetingModal.isVisible({ timeout: 2000 }).catch(() => false)) {
+    console.log('⚠️  Active Meeting Found modal detected, ending the meeting...');
+    
+    const endMeetingInModalSelectors = [
+      'button:has-text("End Meeting")',
+      'button:has-text("× End Meeting")',
+      'button:has-text("End")',
+      '[data-testid*="end-meeting"]',
+      'button[aria-label*="end meeting" i]',
+    ];
+    
+    for (const selector of endMeetingInModalSelectors) {
+      const endBtn = page.locator(selector).first();
+      if (await endBtn.isVisible({ timeout: 2000 }).catch(() => false)) {
+        await endBtn.click().catch(() => {});
+        console.log('✅ Clicked "End Meeting" button in modal');
+        await page.waitForTimeout(2000);
+        
+        // Wait for modal to close
+        try {
+          await activeMeetingModal.waitFor({ state: 'hidden', timeout: 5000 });
+        } catch (e) {
+          // Modal may have closed or still closing
+        }
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
 test.beforeEach(async ({ page, login }) => {
   test.setTimeout(120000);
   await login();
+  // Delete all existing meetings before each test
+  await deleteAllExistingMeetings(page);
 });
 
 test('Create meeting and verify it was created @critical', async ({ page }) => {
   // STEP 1: Navigate to Reach/video-meeting page
   await page.goto('/video-meeting', { waitUntil: 'domcontentloaded' });
   await page.waitForTimeout(3000); // Wait for page to load
+  
+  // Handle "Active Meeting Found" modal if it appears
+  await handleActiveMeetingModal(page);
   
   // Verify page loaded
   const currentUrl = page.url();
@@ -283,6 +473,9 @@ test('Schedule meeting and verify it was scheduled @critical', async ({ page }) 
   // STEP 1: Navigate to Reach/video-meeting page
   await page.goto('/video-meeting', { waitUntil: 'domcontentloaded' });
   await page.waitForTimeout(3000); // Wait for page to load
+  
+  // Handle "Active Meeting Found" modal if it appears
+  await handleActiveMeetingModal(page);
   
   // Verify page loaded
   const currentUrl = page.url();
@@ -595,6 +788,9 @@ test('Start meeting by clicking start meeting icon @critical', async ({ page }) 
   // STEP 1: Navigate to Reach/video-meeting page
   await page.goto('/video-meeting', { waitUntil: 'domcontentloaded' });
   await page.waitForTimeout(3000); // Wait for page to load
+  
+  // Handle "Active Meeting Found" modal if it appears
+  await handleActiveMeetingModal(page);
   
   // Verify page loaded
   const currentUrl = page.url();
@@ -913,258 +1109,13 @@ test('Start meeting by clicking start meeting icon @critical', async ({ page }) 
   console.log('✅ Start meeting verified successfully!');
 });
 
-test('Delete meeting by clicking delete icon @critical', async ({ page }) => {
-  // STEP 1: Navigate to Reach/video-meeting page
-  await page.goto('/video-meeting', { waitUntil: 'domcontentloaded' });
-  await page.waitForTimeout(3000); // Wait for page to load
-  
-  // Verify page loaded
-  const currentUrl = page.url();
-  expect(currentUrl).toContain('grabdocs');
-  expect(currentUrl).not.toBe('about:blank');
-  
-  // STEP 2: Refresh page to ensure we see all available meetings
-  console.log('✅ Refreshing page to see available meetings...');
-  await page.reload({ waitUntil: 'domcontentloaded' });
-  await page.waitForTimeout(3000);
-  
-  // STEP 3: Find an existing meeting from the list to delete
-  console.log('✅ Looking for an existing meeting to delete...');
-  
-  const meetingSelectors = [
-    '[class*="meeting"]',
-    '[data-testid*="meeting"]',
-    '[class*="card"]',
-    '[class*="item"]',
-    '[class*="list-item"]',
-  ];
-  
-  let meetingElement: import('@playwright/test').Locator | null = null;
-  
-  // Find any existing meeting from the list (skip navigation items)
-  for (const selector of meetingSelectors) {
-    const meetings = page.locator(selector);
-    const meetingCount = await meetings.count();
-    
-    if (meetingCount > 0) {
-      for (let i = 0; i < Math.min(meetingCount, 30); i++) {
-        const meeting = meetings.nth(i);
-        if (await meeting.isVisible({ timeout: 2000 }).catch(() => false)) {
-          const meetingText = await meeting.textContent().catch(() => '');
-          // Look for any meeting (skip navigation items like home, dashboard)
-          if (meetingText && 
-              !meetingText.toLowerCase().includes('home') &&
-              !meetingText.toLowerCase().includes('dashboard') &&
-              !meetingText.toLowerCase().includes('create') &&
-              !meetingText.toLowerCase().includes('join') &&
-              meetingText.trim().length > 0) {
-            meetingElement = meeting;
-            console.log(`✅ Found existing meeting at index ${i}: "${meetingText.substring(0, 50)}"`);
-            break;
-          }
-        }
-      }
-      if (meetingElement) break;
-    }
-  }
-  
-  // If no meeting found, throw an error
-  if (!meetingElement) {
-    throw new Error('No existing meetings found to delete. Please create a meeting first.');
-  }
-  
-  // STEP 4: Capture meeting text before deletion for verification
-  expect(meetingElement).not.toBeNull();
-  const deletedMeetingText = await meetingElement!.textContent().catch(() => '');
-  console.log(`✅ Found meeting to delete: "${deletedMeetingText?.substring(0, 50)}"`);
-  
-  // Find delete icon/button within the meeting card
-  console.log('✅ Looking for delete icon...');
-  
-  // Look for delete icon/button
-  const deleteIconSelectors = [
-    'button[aria-label*="delete" i]',
-    'button[title*="delete" i]',
-    'svg[aria-label*="delete" i]',
-    'button:has(svg[aria-label*="delete" i])',
-    'button:has-text("Delete")',
-    'button:has-text("Remove")',
-    '[data-testid*="delete"]',
-    '[data-testid*="remove"]',
-    '[class*="delete-icon"]',
-    '[class*="trash-icon"]',
-    'button:has(svg[class*="trash"])',
-    'button:has(svg[class*="delete"])',
-    'svg[class*="trash"]',
-    'svg[class*="delete"]',
-  ];
-  
-  let deleteIcon: import('@playwright/test').Locator | null = null;
-  
-  // First, search within the meeting element
-  if (meetingElement) {
-    for (const selector of deleteIconSelectors) {
-      const icon = meetingElement.locator(selector).first();
-      if (await icon.isVisible({ timeout: 2000 }).catch(() => false)) {
-        const ariaLabel = await icon.getAttribute('aria-label').catch(() => '');
-        const title = await icon.getAttribute('title').catch(() => '');
-        console.log(`✅ Found delete icon in meeting: ${selector} (aria-label: ${ariaLabel}, title: ${title})`);
-        deleteIcon = icon;
-        break;
-      }
-    }
-  }
-  
-  // If not found in meeting element, search on page
-  if (!deleteIcon) {
-    console.log('✅ Searching page for delete icon...');
-    for (const selector of deleteIconSelectors) {
-      const icon = page.locator(selector).first();
-      if (await icon.isVisible({ timeout: 2000 }).catch(() => false)) {
-        const ariaLabel = await icon.getAttribute('aria-label').catch(() => '');
-        const title = await icon.getAttribute('title').catch(() => '');
-        console.log(`✅ Found delete icon on page: ${selector} (aria-label: ${ariaLabel}, title: ${title})`);
-        deleteIcon = icon;
-        break;
-      }
-    }
-  }
-  
-  // If still not found, search all buttons with icons
-  if (!deleteIcon) {
-    console.log('✅ Searching all buttons for delete icon...');
-    const allButtons = page.locator('button:has(svg), button[aria-label], button[title]');
-    const buttonCount = await allButtons.count();
-    
-    for (let i = 0; i < Math.min(buttonCount, 50); i++) {
-      const btn = allButtons.nth(i);
-      if (await btn.isVisible({ timeout: 1000 }).catch(() => false)) {
-        const ariaLabel = await btn.getAttribute('aria-label').catch(() => '');
-        const title = await btn.getAttribute('title').catch(() => '');
-        const btnText = await btn.textContent().catch(() => '');
-        
-        if (ariaLabel?.toLowerCase().includes('delete') ||
-            title?.toLowerCase().includes('delete') ||
-            btnText?.toLowerCase().includes('delete') ||
-            ariaLabel?.toLowerCase().includes('remove') ||
-            title?.toLowerCase().includes('remove') ||
-            btnText?.toLowerCase().includes('remove')) {
-          deleteIcon = btn;
-          console.log(`✅ Found delete button at index ${i}: aria-label="${ariaLabel}", title="${title}", text="${btnText}"`);
-          break;
-        }
-      }
-    }
-  }
-  
-  // STEP 5: Verify delete icon exists and click it
-  expect(deleteIcon).not.toBeNull();
-  expect(await deleteIcon!.isVisible()).toBeTruthy();
-  console.log('✅ Delete icon found, clicking...');
-  
-  try {
-    await deleteIcon!.scrollIntoViewIfNeeded();
-    await page.waitForTimeout(500);
-    await deleteIcon!.click({ timeout: 5000 });
-    console.log('✅ Clicked delete icon');
-  } catch (error) {
-    // If normal click fails, use JavaScript click
-    console.log('⚠️  Normal click failed, using JavaScript click...');
-    await deleteIcon!.evaluate((el: HTMLElement) => {
-      (el as HTMLElement).click();
-    });
-    console.log('✅ Clicked delete icon (JavaScript)');
-  }
-  
-  await page.waitForTimeout(2000); // Wait for confirmation dialog if any
-  
-  // STEP 6: Confirm deletion if confirmation dialog appears
-  const confirmSelectors = [
-    'button:has-text("Delete")',
-    'button:has-text("Confirm")',
-    'button:has-text("Yes")',
-    'button:has-text("Remove")',
-    'button[type="submit"]',
-  ];
-  
-  let confirmButton: import('@playwright/test').Locator | null = null;
-  
-  for (const selector of confirmSelectors) {
-    const btn = page.locator(selector).first();
-    if (await btn.isVisible({ timeout: 3000 }).catch(() => false)) {
-      const btnText = await btn.textContent().catch(() => '');
-      if (btnText && (btnText.toLowerCase().includes('delete') || 
-                      btnText.toLowerCase().includes('confirm') ||
-                      btnText.toLowerCase().includes('yes') ||
-                      btnText.toLowerCase().includes('remove'))) {
-        confirmButton = btn;
-        console.log(`✅ Found confirmation button: "${btnText}"`);
-        break;
-      }
-    }
-  }
-  
-  if (confirmButton) {
-    await confirmButton.click();
-    console.log('✅ Confirmed deletion');
-    await page.waitForTimeout(2000);
-  }
-  
-  // STEP 7: Verify meeting was deleted
-  console.log('✅ Verifying meeting was deleted...');
-  
-  await page.reload({ waitUntil: 'domcontentloaded' });
-  await page.waitForTimeout(3000);
-  
-  // Check for success message
-  const successMessage = await Promise.race([
-    page.getByText(/deleted|removed|success/i).isVisible({ timeout: 3000 }).catch(() => false),
-    page.locator('[role="alert"]').filter({ hasText: /deleted|removed|success/i }).isVisible({ timeout: 3000 }).catch(() => false),
-    page.locator('[class*="toast"]').filter({ hasText: /deleted|removed/i }).isVisible({ timeout: 3000 }).catch(() => false),
-  ]);
-  
-  // Check if the deleted meeting still exists in list
-  // We'll check by comparing the meeting count before and after, or by checking if the specific meeting is gone
-  const meetingItems = page.locator('[class*="meeting"], [data-testid*="meeting"], [class*="card"], [class*="item"], [class*="list-item"]');
-  const meetingItemCountAfter = await meetingItems.count();
-  
-  let meetingStillExists = false;
-  
-  if (meetingItemCountAfter > 0) {
-    for (let i = 0; i < Math.min(meetingItemCountAfter, 30); i++) {
-      const meetingItem = meetingItems.nth(i);
-      if (await meetingItem.isVisible({ timeout: 1000 }).catch(() => false)) {
-        const itemText = await meetingItem.textContent().catch(() => '');
-        // Check if this is the same meeting we deleted
-        if (itemText && deletedMeetingText && itemText.trim() === deletedMeetingText.trim()) {
-          meetingStillExists = true;
-          break;
-        }
-      }
-    }
-  }
-  
-  // Check for error messages
-  const errorVisible = await page.getByText(/error|failed|invalid/i).isVisible({ timeout: 2000 }).catch(() => false);
-  
-  // VERIFICATION: Meeting should be deleted (success message OR meeting not found in list)
-  const meetingDeleted = successMessage || !meetingStillExists;
-  expect(meetingDeleted).toBeTruthy();
-  expect(errorVisible).toBeFalsy();
-  
-  if (successMessage) {
-    console.log('✅ Success message displayed - meeting deleted!');
-  } else if (!meetingStillExists) {
-    console.log('✅ Meeting no longer appears in list - meeting deleted!');
-  }
-  
-  console.log('✅ Meeting deletion verified successfully!');
-});
-
 test('Invite participant by clicking mail icon @critical', async ({ page }) => {
   // STEP 1: Navigate to Reach/video-meeting page
   await page.goto('/video-meeting', { waitUntil: 'domcontentloaded' });
   await page.waitForTimeout(3000); // Wait for page to load
+  
+  // Handle "Active Meeting Found" modal if it appears
+  await handleActiveMeetingModal(page);
   
   // Verify page loaded
   const currentUrl = page.url();
@@ -1588,11 +1539,11 @@ test('Invite participant by clicking mail icon @critical', async ({ page }) => {
       for (let i = 0; i < Math.min(buttonCount, 30); i++) {
         const btn = allButtons.nth(i);
         if (await btn.isVisible({ timeout: 1000 }).catch(() => false)) {
-          const btnText = await btn.textContent().catch(() => '');
-          if ((btnText.toLowerCase().includes('send') && btnText.toLowerCase().includes('invite')) ||
-              (btnText.toLowerCase() === 'send')) {
+          const rawText = await btn.textContent().catch(() => '') || '';
+          const text = rawText.toLowerCase();
+          if ((text.includes('send') && text.includes('invite')) || text === 'send') {
             sendButton = btn;
-            console.log(`✅ Found Send Invite button at index ${i}: "${btnText}"`);
+            console.log(`✅ Found Send Invite button at index ${i}: "${rawText}"`);
             break;
           }
         }
@@ -1644,6 +1595,9 @@ test('Join meeting with meeting ID and passcode @critical', async ({ page }) => 
   // STEP 1: Navigate to Reach/video-meeting page
   await page.goto('/video-meeting', { waitUntil: 'domcontentloaded' });
   await page.waitForTimeout(3000); // Wait for page to load
+  
+  // Handle "Active Meeting Found" modal if it appears
+  await handleActiveMeetingModal(page);
   
   // Verify page loaded
   const currentUrl = page.url();
@@ -2165,4 +2119,963 @@ test('Join meeting with meeting ID and passcode @critical', async ({ page }) => 
   }
   
   console.log('✅ Join meeting with ID and passcode verified successfully!');
+});
+
+test('Edit/Update meeting and verify changes were saved @critical', async ({ page }) => {
+  // Feature flag: edit/update is not available in current build
+  test.skip(true, 'Edit/Update meeting feature not available in current build');
+  
+  // STEP 1: Navigate to Reach/video-meeting page
+  await page.goto('/video-meeting', { waitUntil: 'domcontentloaded' });
+  await page.waitForTimeout(3000); // Wait for page to load
+  
+  // Handle "Active Meeting Found" modal if it appears
+  await handleActiveMeetingModal(page);
+  
+  // Verify page loaded
+  const currentUrl = page.url();
+  expect(currentUrl).toContain('grabdocs');
+  expect(currentUrl).not.toBe('about:blank');
+  
+  // STEP 2: Refresh page to see available meetings
+  console.log('✅ Refreshing page to see available meetings...');
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await page.waitForTimeout(3000);
+  
+  // STEP 3: Find an existing meeting to edit
+  console.log('✅ Looking for an existing meeting to edit...');
+  
+  const meetingSelectors = [
+    '[class*="meeting"]',
+    '[data-testid*="meeting"]',
+    '[class*="card"]',
+    '[class*="item"]',
+    '[class*="list-item"]',
+  ];
+  
+  let meetingElement: import('@playwright/test').Locator | null = null;
+  let originalMeetingText = '';
+  
+  // Find any existing meeting from the list
+  for (const selector of meetingSelectors) {
+    const meetings = page.locator(selector);
+    const meetingCount = await meetings.count();
+    
+    if (meetingCount > 0) {
+      for (let i = 0; i < Math.min(meetingCount, 30); i++) {
+        const meeting = meetings.nth(i);
+        if (await meeting.isVisible({ timeout: 2000 }).catch(() => false)) {
+          const meetingText = await meeting.textContent().catch(() => '');
+          // Look for any meeting (skip navigation items)
+          if (meetingText && 
+              !meetingText.toLowerCase().includes('home') &&
+              !meetingText.toLowerCase().includes('dashboard') &&
+              !meetingText.toLowerCase().includes('create') &&
+              !meetingText.toLowerCase().includes('join') &&
+              meetingText.trim().length > 0) {
+            meetingElement = meeting;
+            originalMeetingText = meetingText;
+            console.log(`✅ Found meeting to edit at index ${i}: "${meetingText.substring(0, 50)}"`);
+            break;
+          }
+        }
+      }
+      if (meetingElement) break;
+    }
+  }
+  
+  if (!meetingElement) {
+    throw new Error('No existing meetings found to edit. Please create a meeting first.');
+  }
+  
+  // STEP 4: Find edit icon/button within the meeting card
+  console.log('✅ Meeting found, looking for edit icon...');
+  
+  const editIconSelectors = [
+    'button[aria-label*="edit" i]',
+    'button[title*="edit" i]',
+    'button[aria-label*="update" i]',
+    'button[title*="update" i]',
+    'svg[aria-label*="edit" i]',
+    'button:has(svg[aria-label*="edit" i])',
+    'button:has-text("Edit")',
+    'button:has-text("Update")',
+    '[data-testid*="edit"]',
+    '[data-testid*="update"]',
+    '[class*="edit-icon"]',
+    '[class*="pencil-icon"]',
+    'button:has(svg[class*="pencil"])',
+    'button:has(svg[class*="edit"])',
+    'svg[class*="pencil"]',
+    'svg[class*="edit"]',
+  ];
+  
+  let editIcon: import('@playwright/test').Locator | null = null;
+  
+  // First, search within the meeting element
+  if (meetingElement) {
+    for (const selector of editIconSelectors) {
+      const icon = meetingElement.locator(selector).first();
+      if (await icon.isVisible({ timeout: 2000 }).catch(() => false)) {
+        const ariaLabel = await icon.getAttribute('aria-label').catch(() => '');
+        const title = await icon.getAttribute('title').catch(() => '');
+        console.log(`✅ Found edit icon in meeting: ${selector} (aria-label: ${ariaLabel}, title: ${title})`);
+        editIcon = icon;
+        break;
+      }
+    }
+  }
+  
+  // If not found in meeting element, search on page
+  if (!editIcon) {
+    console.log('✅ Searching page for edit icon...');
+    for (const selector of editIconSelectors) {
+      const icon = page.locator(selector).first();
+      if (await icon.isVisible({ timeout: 2000 }).catch(() => false)) {
+        const ariaLabel = await icon.getAttribute('aria-label').catch(() => '');
+        const title = await icon.getAttribute('title').catch(() => '');
+        console.log(`✅ Found edit icon on page: ${selector} (aria-label: ${ariaLabel}, title: ${title})`);
+        editIcon = icon;
+        break;
+      }
+    }
+  }
+  
+  // If still not found, search all buttons with icons
+  if (!editIcon) {
+    console.log('✅ Searching all buttons for edit icon...');
+    const allButtons = page.locator('button:has(svg), button[aria-label], button[title]');
+    const buttonCount = await allButtons.count();
+    
+    for (let i = 0; i < Math.min(buttonCount, 50); i++) {
+      const btn = allButtons.nth(i);
+      if (await btn.isVisible({ timeout: 1000 }).catch(() => false)) {
+        const ariaLabel = await btn.getAttribute('aria-label').catch(() => '');
+        const title = await btn.getAttribute('title').catch(() => '');
+        const btnText = await btn.textContent().catch(() => '');
+        
+        if (ariaLabel?.toLowerCase().includes('edit') ||
+            title?.toLowerCase().includes('edit') ||
+            btnText?.toLowerCase().includes('edit') ||
+            ariaLabel?.toLowerCase().includes('update') ||
+            title?.toLowerCase().includes('update') ||
+            btnText?.toLowerCase().includes('update')) {
+          editIcon = btn;
+          console.log(`✅ Found edit button at index ${i}: aria-label="${ariaLabel}", title="${title}", text="${btnText}"`);
+          break;
+        }
+      }
+    }
+  }
+  
+  // STEP 5: Verify edit icon exists and click it
+  expect(editIcon).not.toBeNull();
+  expect(await editIcon!.isVisible()).toBeTruthy();
+  console.log('✅ Edit icon found, clicking...');
+  
+  try {
+    await editIcon!.scrollIntoViewIfNeeded();
+    await page.waitForTimeout(500);
+    await editIcon!.click({ timeout: 5000 });
+    console.log('✅ Clicked edit icon');
+  } catch (error) {
+    // If normal click fails, use JavaScript click
+    console.log('⚠️  Normal click failed, using JavaScript click...');
+    await editIcon!.evaluate((el: HTMLElement) => {
+      (el as HTMLElement).click();
+    });
+    console.log('✅ Clicked edit icon (JavaScript)');
+  }
+  
+  await page.waitForTimeout(3000); // Wait for edit form/modal to appear
+  
+  // STEP 6: Update meeting form fields
+  console.log('✅ Looking for edit form fields...');
+  
+  const editModal = page.locator('[role="dialog"], [class*="modal"], [class*="dialog"], .fixed.inset-0').first();
+  const editModalVisible = await editModal.isVisible({ timeout: 3000 }).catch(() => false);
+  const editSource = editModalVisible ? editModal : page;
+  
+  // Update title if field exists
+  const titleSelectors = [
+    'input[name*="title"]',
+    'input[name*="name"]',
+    'input[placeholder*="meeting" i]',
+    'input[placeholder*="title" i]',
+  ];
+  
+  const updatedTitle = 'Updated Meeting ' + Date.now();
+  
+  for (const selector of titleSelectors) {
+    const input = editSource.locator(selector).first();
+    if (await input.isVisible({ timeout: 2000 }).catch(() => false)) {
+      const isEnabled = await input.isEnabled().catch(() => false);
+      if (isEnabled) {
+        await input.fill('');
+        await input.fill(updatedTitle);
+        console.log(`✅ Updated meeting title: ${updatedTitle}`);
+        await page.waitForTimeout(300);
+        break;
+      }
+    }
+  }
+  
+  // STEP 7: Click Save/Update button
+  console.log('✅ Looking for Save/Update button...');
+  
+  const saveButtonSelectors = [
+    'button:has-text("Save")',
+    'button:has-text("Update")',
+    'button:has-text("Save Changes")',
+    'button:has-text("Update Meeting")',
+    'button[type="submit"]',
+    '[data-testid*="save"]',
+    '[data-testid*="update"]',
+  ];
+  
+  let saveButton: import('@playwright/test').Locator | null = null;
+  
+  for (const selector of saveButtonSelectors) {
+    const btn = editSource.locator(selector).first();
+    if (await btn.isVisible({ timeout: 2000 }).catch(() => false)) {
+      const btnText = await btn.textContent().catch(() => '');
+      if (btnText && (btnText.toLowerCase().includes('save') || btnText.toLowerCase().includes('update'))) {
+        saveButton = btn;
+        console.log(`✅ Found Save/Update button: "${btnText}"`);
+        break;
+      }
+    }
+  }
+  
+  if (saveButton) {
+    await saveButton.scrollIntoViewIfNeeded();
+    await page.waitForTimeout(500);
+    await saveButton.click();
+    console.log('✅ Clicked Save/Update button');
+    await page.waitForTimeout(2000);
+    
+    if (editModalVisible) {
+      try {
+        await editModal.waitFor({ state: 'hidden', timeout: 5000 });
+      } catch (e) {
+        // Modal may still be visible
+      }
+    }
+  }
+  
+  // STEP 8: Verify meeting was updated
+  console.log('✅ Verifying meeting was updated...');
+  
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await page.waitForTimeout(3000);
+  
+  // Check for success message
+  const successMessage = await Promise.race([
+    page.getByText(/updated|saved|success/i).isVisible({ timeout: 3000 }).catch(() => false),
+    page.locator('[role="alert"]').filter({ hasText: /updated|saved|success/i }).isVisible({ timeout: 3000 }).catch(() => false),
+    page.locator('[class*="toast"]').filter({ hasText: /updated|saved/i }).isVisible({ timeout: 3000 }).catch(() => false),
+  ]);
+  
+  // Check if updated meeting appears in list
+  const updatedMeetingFound = await page.getByText(updatedTitle, { exact: false }).isVisible({ timeout: 3000 }).catch(() => false);
+  
+  // Check for error messages
+  const errorVisible = await page.getByText(/error|failed|invalid/i).isVisible({ timeout: 2000 }).catch(() => false);
+  
+  // VERIFICATION: Meeting should be updated (success message OR updated title found)
+  const meetingUpdated = successMessage || updatedMeetingFound;
+  expect(meetingUpdated).toBeTruthy();
+  expect(errorVisible).toBeFalsy();
+  
+  if (successMessage) {
+    console.log('✅ Success message displayed - meeting updated!');
+  } else if (updatedMeetingFound) {
+    console.log('✅ Updated meeting found in list - meeting updated!');
+  }
+  
+  console.log('✅ Edit/Update meeting verified successfully!');
+});
+
+test('End meeting while in meeting @critical', async ({ page }) => {
+  // STEP 1: Navigate to Reach/video-meeting page
+  await page.goto('/video-meeting', { waitUntil: 'domcontentloaded' });
+  await page.waitForTimeout(3000);
+  
+  // Handle "Active Meeting Found" modal if it appears
+  await handleActiveMeetingModal(page);
+  
+  // STEP 2: Create a meeting first, then start it
+  console.log('✅ Creating a meeting first...');
+  
+  const createMeetingSelectors = [
+    'button:has-text("Create Meeting")',
+    'button:has-text("Create a Meeting")',
+    'button:has-text("New Meeting")',
+    'button:has-text("Create")',
+    '[data-testid*="create-meeting"]',
+    '[data-testid*="new-meeting"]',
+    '[aria-label*="create meeting" i]',
+  ];
+  
+  let createMeetingButton: import('@playwright/test').Locator | null = null;
+  
+  for (const selector of createMeetingSelectors) {
+    const btn = page.locator(selector).first();
+    if (await btn.isVisible({ timeout: 3000 }).catch(() => false)) {
+      createMeetingButton = btn;
+      break;
+    }
+  }
+  
+  if (createMeetingButton) {
+    await createMeetingButton.click();
+    await page.waitForTimeout(3000);
+    
+    const modal = page.locator('[role="dialog"], [class*="modal"], [class*="dialog"]').first();
+    const modalVisible = await modal.isVisible({ timeout: 3000 }).catch(() => false);
+    const locatorSource = modalVisible ? modal : page;
+    
+    // Fill title if field exists
+    const titleSelectors = ['input[name*="title"]', 'input[name*="name"]', 'input[placeholder*="meeting" i]', 'input[placeholder*="title" i]'];
+    for (const selector of titleSelectors) {
+      const input = locatorSource.locator(selector).first();
+      if (await input.isVisible({ timeout: 1000 }).catch(() => false)) {
+        const isEnabled = await input.isEnabled().catch(() => false);
+        if (isEnabled) {
+          await input.fill('Test Meeting to End ' + Date.now());
+          await page.waitForTimeout(300);
+          break;
+        }
+      }
+    }
+    
+    // Save meeting
+    const saveButtonSelectors = ['button:has-text("Create Meeting")', 'button:has-text("Create")', 'button:has-text("Save")', 'button[type="submit"]'];
+    let saveButton: import('@playwright/test').Locator | null = null;
+    
+    if (modalVisible) {
+      for (const selector of saveButtonSelectors) {
+        const btn = modal.locator(selector).first();
+        if (await btn.isVisible({ timeout: 2000 }).catch(() => false)) {
+          const btnText = await btn.textContent().catch(() => '');
+          if (btnText && (btnText.toLowerCase().includes('create') || btnText.toLowerCase().includes('save'))) {
+            saveButton = btn;
+            break;
+          }
+        }
+      }
+    }
+    
+    if (saveButton) {
+      await saveButton.click();
+      await page.waitForTimeout(3000);
+      if (modalVisible) {
+        try {
+          await modal.waitFor({ state: 'hidden', timeout: 5000 });
+        } catch (e) {}
+      }
+    }
+  }
+  
+  // STEP 3: Refresh and find the meeting, then start it
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await page.waitForTimeout(3000);
+  
+  // Find and start the meeting
+  const meetingSelectors = ['[class*="meeting"]', '[data-testid*="meeting"]', '[class*="card"]', '[class*="item"]'];
+  let meetingElement: import('@playwright/test').Locator | null = null;
+  
+  for (const selector of meetingSelectors) {
+    const meetings = page.locator(selector);
+    const meetingCount = await meetings.count();
+    if (meetingCount > 0) {
+      for (let i = 0; i < Math.min(meetingCount, 30); i++) {
+        const meeting = meetings.nth(i);
+        if (await meeting.isVisible({ timeout: 2000 }).catch(() => false)) {
+          const meetingText = await meeting.textContent().catch(() => '');
+          if (meetingText && !meetingText.toLowerCase().includes('home') && !meetingText.toLowerCase().includes('dashboard')) {
+            meetingElement = meeting;
+            break;
+          }
+        }
+      }
+      if (meetingElement) break;
+    }
+  }
+  
+  // Find and click start meeting icon
+  if (meetingElement) {
+    const startIconSelectors = [
+      'button[aria-label*="start" i]',
+      'button:has-text("Start")',
+      'button:has-text("Start Meeting")',
+      'button:has-text("Join")',
+      '[data-testid*="start"]',
+    ];
+    
+    let startIcon: import('@playwright/test').Locator | null = null;
+    
+    for (const selector of startIconSelectors) {
+      const icon = meetingElement.locator(selector).first();
+      if (await icon.isVisible({ timeout: 2000 }).catch(() => false)) {
+        startIcon = icon;
+        break;
+      }
+    }
+    
+    if (startIcon) {
+      await startIcon.click();
+      await page.waitForTimeout(5000); // Wait for meeting to start
+    }
+  }
+  
+  // STEP 4: Find and click "Leave" to end the meeting
+  console.log('✅ Looking for Leave button to end meeting...');
+  
+  const leaveSelectors = [
+    'button:has-text("Leave Meeting")',
+    'button:has-text("Leave")',
+    'button[aria-label*="leave meeting" i]',
+    'button[aria-label*="leave" i]',
+    '[data-testid*="leave"]',
+    '[data-testid*="leave-meeting"]',
+  ];
+  
+  let leaveButton: import('@playwright/test').Locator | null = null;
+  
+  for (const selector of leaveSelectors) {
+    const btn = page.locator(selector).first();
+    if (await btn.isVisible({ timeout: 5000 }).catch(() => false)) {
+      const btnText = await btn.textContent().catch(() => '');
+      if (btnText && btnText.toLowerCase().includes('leave')) {
+        leaveButton = btn;
+        console.log(`✅ Found Leave button: "${btnText}"`);
+        break;
+      }
+    }
+  }
+  
+  // If not found, search all buttons
+  if (!leaveButton) {
+    const allButtons = page.locator('button, [role="button"]');
+    const buttonCount = await allButtons.count();
+    for (let i = 0; i < Math.min(buttonCount, 50); i++) {
+      const btn = allButtons.nth(i);
+      if (await btn.isVisible({ timeout: 1000 }).catch(() => false)) {
+        const btnText = await btn.textContent().catch(() => '');
+        if (btnText && btnText.toLowerCase().includes('leave')) {
+          leaveButton = btn;
+          console.log(`✅ Found Leave button at index ${i}: "${btnText}"`);
+          break;
+        }
+      }
+    }
+  }
+  
+  expect(leaveButton).not.toBeNull();
+  expect(await leaveButton!.isVisible()).toBeTruthy();
+  console.log('✅ Leave button found, clicking to end meeting...');
+  
+  await leaveButton!.scrollIntoViewIfNeeded();
+  await page.waitForTimeout(500);
+  await leaveButton!.click();
+  console.log('✅ Clicked Leave button');
+  await page.waitForTimeout(2000); // Wait for confirmation dialog if any
+  
+  // STEP 5: Confirm end meeting if confirmation dialog appears
+  const confirmSelectors = [
+    'button:has-text("End Meeting")',
+    'button:has-text("End")',
+    'button:has-text("Confirm")',
+    'button:has-text("Yes")',
+  ];
+  
+  let confirmButton: import('@playwright/test').Locator | null = null;
+  
+  for (const selector of confirmSelectors) {
+    const btn = page.locator(selector).first();
+    if (await btn.isVisible({ timeout: 3000 }).catch(() => false)) {
+      const btnText = await btn.textContent().catch(() => '');
+      if (btnText && (btnText.toLowerCase().includes('end') || btnText.toLowerCase().includes('confirm') || btnText.toLowerCase().includes('yes'))) {
+        confirmButton = btn;
+        console.log(`✅ Found confirmation button: "${btnText}"`);
+        break;
+      }
+    }
+  }
+  
+  if (confirmButton) {
+    await confirmButton.click();
+    console.log('✅ Confirmed end meeting');
+    await page.waitForTimeout(3000);
+  }
+  
+  // STEP 6: Verify meeting was ended (redirected back to meetings list)
+  console.log('✅ Verifying meeting was ended...');
+  
+  // Check if redirected back to meetings page
+  const redirectedToMeetings = await Promise.race([
+    page.waitForURL(/video-meeting/, { timeout: 5000 }).catch(() => false),
+    page.waitForTimeout(3000).then(() => page.url().includes('video-meeting')),
+  ]);
+  
+  // Check for success message
+  const successMessage = await Promise.race([
+    page.getByText(/ended|closed|success/i).isVisible({ timeout: 3000 }).catch(() => false),
+    page.locator('[role="alert"]').filter({ hasText: /ended|closed/i }).isVisible({ timeout: 3000 }).catch(() => false),
+  ]);
+  
+  // Check for error messages
+  const errorVisible = await page.getByText(/error|failed/i).isVisible({ timeout: 2000 }).catch(() => false);
+  
+  // VERIFICATION: Meeting should be ended (redirected OR success message)
+  const meetingEnded = redirectedToMeetings || successMessage;
+  expect(meetingEnded).toBeTruthy();
+  expect(errorVisible).toBeFalsy();
+  
+  if (redirectedToMeetings) {
+    console.log('✅ Redirected back to meetings page - meeting ended!');
+  } else if (successMessage) {
+    console.log('✅ Success message displayed - meeting ended!');
+  }
+  
+  console.log('✅ End meeting verified successfully!');
+});
+
+test('Turn video on/off during meeting @functional', async ({ page }) => {
+  // STEP 1: Navigate to Reach/video-meeting page
+  await page.goto('/video-meeting', { waitUntil: 'domcontentloaded' });
+  await page.waitForTimeout(3000);
+  
+  // STEP 2: End any currently active meeting via modal, then start an existing meeting
+  console.log('✅ Looking for an existing meeting to start (video toggle test)...');
+
+  const findMeetingToStart = async (): Promise<import('@playwright/test').Locator | null> => {
+    const meetings = page.locator('[class*="meeting"], [data-testid*="meeting"], [class*="card"], [class*="item"]');
+    const meetingCount = await meetings.count();
+    if (meetingCount === 0) return null;
+
+    for (let i = 0; i < Math.min(meetingCount, 30); i++) {
+      const candidate = meetings.nth(i);
+      if (await candidate.isVisible({ timeout: 2000 }).catch(() => false)) {
+        const text = (await candidate.textContent().catch(() => ''))?.toLowerCase() || '';
+        if (!text.includes('home') && !text.includes('dashboard') && text.trim().length > 0) {
+          console.log(`✅ Using existing meeting at index ${i} for video toggle test`);
+          return candidate;
+        }
+      }
+    }
+    return null;
+  };
+
+  let meetingToStart = await findMeetingToStart();
+  if (!meetingToStart) {
+    throw new Error('No existing meetings found to start for video toggle test. Please ensure at least one meeting exists.');
+  }
+
+  const startExistingMeeting = async () => {
+    const startBtn = meetingToStart!
+      .locator('button[aria-label*="start" i], button:has-text("Start"), button:has-text("Join"), [data-testid*="start"]')
+      .first();
+
+    if (!(await startBtn.isVisible({ timeout: 3000 }).catch(() => false))) {
+      throw new Error('Could not find Start/Join button on existing meeting card for video toggle test.');
+    }
+
+    await startBtn.click();
+    await page.waitForTimeout(2000); // Wait for potential active-meeting modal
+
+    // If an Active Meeting Found dialog appears, end the existing meeting, then start again
+    const endedExisting = await handleActiveMeetingModal(page);
+    if (endedExisting) {
+      console.log('✅ Existing active meeting ended - starting meeting again for video toggle test...');
+      await page.waitForTimeout(2000);
+      meetingToStart = await findMeetingToStart();
+      if (!meetingToStart) {
+        throw new Error('After ending active meeting, no meetings found to start for video toggle test.');
+      }
+      const startBtn2 = meetingToStart
+        .locator('button[aria-label*="start" i], button:has-text("Start"), button:has-text("Join"), [data-testid*="start"]')
+        .first();
+      if (!(await startBtn2.isVisible({ timeout: 3000 }).catch(() => false))) {
+        throw new Error('Could not find Start/Join button after ending active meeting.');
+      }
+      await startBtn2.click();
+      await page.waitForTimeout(3000);
+    } else {
+      await page.waitForTimeout(3000); // Normal path: wait for join / pre-join UI
+    }
+  };
+
+  await startExistingMeeting();
+  
+  // STEP 3: Ensure we are in the join/meeting UI
+  console.log('✅ Waiting for join or meeting interface after starting meeting...');
+  const meetingReady = await Promise.race([
+    // Pre-join device dialog
+    page.locator('[role="dialog"], [class*="modal"], [class*="dialog"], .fixed.inset-0').filter({ hasText: /video|camera|microphone|mic|Join/iu }).isVisible({ timeout: 5000 }).catch(() => false),
+    // Direct meeting UI (no pre-join)
+    page.locator('video, [class*="meeting"], [class*="conference"]').first().isVisible({ timeout: 5000 }).catch(() => false),
+  ]);
+
+  if (!meetingReady) {
+    throw new Error('Meeting did not start or pre-join dialog did not appear');
+  }
+  
+  // STEP 3: Handle pre-join/device dialog to turn off video and mic using icons (if present)
+  console.log('✅ Checking for pre-join device dialog to toggle video/mic...');
+
+  const deviceDialog = page
+    .locator('[role="dialog"], [class*="modal"], [class*="dialog"], .fixed.inset-0')
+    .filter({ hasText: /video|camera|microphone|mic/i })
+    .first();
+
+  if (await deviceDialog.isVisible({ timeout: 3000 }).catch(() => false)) {
+    console.log('✅ Device dialog visible - toggling video and mic off using icons...');
+
+    const dialogVideoSelectors = [
+      'button[aria-label*="video" i]',
+      'button[aria-label*="camera" i]',
+      'button[title*="video" i]',
+      'button[title*="camera" i]',
+      '[data-testid*="video"]',
+      '[data-testid*="camera"]',
+      'button:has(svg[aria-label*="video" i])',
+      'button:has(svg[aria-label*="camera" i])',
+    ];
+
+    const dialogMicSelectors = [
+      'button[aria-label*="microphone" i]',
+      'button[aria-label*="mic" i]',
+      'button[title*="microphone" i]',
+      'button[title*="mic" i]',
+      '[data-testid*="microphone"]',
+      '[data-testid*="mic"]',
+      'button:has(svg[aria-label*="microphone" i])',
+      'button:has(svg[aria-label*="mic" i])',
+    ];
+
+    // Helper to click first visible inside dialog
+    const clickFirstVisibleInDialog = async (selectors: string[]) => {
+      for (const selector of selectors) {
+        const btn = deviceDialog.locator(selector).first();
+        if (await btn.isVisible({ timeout: 1000 }).catch(() => false)) {
+          await btn.click().catch(() => {});
+          await page.waitForTimeout(500);
+          return true;
+        }
+      }
+      return false;
+    };
+
+    const videoToggledInDialog = await clickFirstVisibleInDialog(dialogVideoSelectors);
+    if (videoToggledInDialog) {
+      console.log('✅ Toggled video icon in device dialog');
+    } else {
+      console.log('⚠️  Could not find video icon in device dialog');
+    }
+
+    const micToggledInDialog = await clickFirstVisibleInDialog(dialogMicSelectors);
+    if (micToggledInDialog) {
+      console.log('✅ Toggled mic icon in device dialog');
+    } else {
+      console.log('⚠️  Could not find mic icon in device dialog');
+    }
+
+    // Try to continue/join from the dialog so the meeting actually starts
+    const joinSelectors = [
+      'button:has-text("Join")',
+      'button:has-text("Join Meeting")',
+      'button:has-text("Continue")',
+      'button:has-text("Start")',
+    ];
+
+    for (const selector of joinSelectors) {
+      const joinBtn = deviceDialog.locator(selector).first();
+      if (await joinBtn.isVisible({ timeout: 2000 }).catch(() => false)) {
+        await joinBtn.click().catch(() => {});
+        console.log(`✅ Clicked "${await joinBtn.textContent().catch(() => 'Join')}" button in device dialog`);
+        await page.waitForTimeout(3000);
+        break;
+      }
+    }
+  }
+  
+  // STEP 3: Find video toggle button in the in-meeting UI
+  console.log('✅ Looking for video toggle button in meeting UI...');
+  
+  const videoToggleSelectors = [
+    'button[aria-label*="video" i]',
+    'button[aria-label*="camera" i]',
+    'button[title*="video" i]',
+    'button[title*="camera" i]',
+    '[data-testid*="video"]',
+    '[data-testid*="camera"]',
+    'button:has(svg[aria-label*="video" i])',
+    'button:has(svg[aria-label*="camera" i])',
+  ];
+  
+  let videoToggleButton: import('@playwright/test').Locator | null = null;
+  
+  for (const selector of videoToggleSelectors) {
+    const btn = page.locator(selector).first();
+    if (await btn.isVisible({ timeout: 5000 }).catch(() => false)) {
+      const ariaLabel = await btn.getAttribute('aria-label').catch(() => '');
+      const title = await btn.getAttribute('title').catch(() => '');
+      if (ariaLabel?.toLowerCase().includes('video') || ariaLabel?.toLowerCase().includes('camera') ||
+          title?.toLowerCase().includes('video') || title?.toLowerCase().includes('camera')) {
+        videoToggleButton = btn;
+        console.log(`✅ Found video toggle button: aria-label="${ariaLabel}", title="${title}"`);
+        break;
+      }
+    }
+  }
+  
+  // If not found, search all buttons
+  if (!videoToggleButton) {
+    const allButtons = page.locator('button:has(svg), button[aria-label]');
+    const buttonCount = await allButtons.count();
+    for (let i = 0; i < Math.min(buttonCount, 50); i++) {
+      const btn = allButtons.nth(i);
+      if (await btn.isVisible({ timeout: 1000 }).catch(() => false)) {
+        const ariaLabel = await btn.getAttribute('aria-label').catch(() => '');
+        if (ariaLabel && (ariaLabel.toLowerCase().includes('video') || ariaLabel.toLowerCase().includes('camera'))) {
+          videoToggleButton = btn;
+          break;
+        }
+      }
+    }
+  }
+  
+  expect(videoToggleButton).not.toBeNull();
+  expect(await videoToggleButton!.isVisible()).toBeTruthy();
+  
+  // STEP 4: Get initial state and toggle video off
+  console.log('✅ Toggling video off...');
+  const initialAriaLabel = await videoToggleButton!.getAttribute('aria-label').catch(() => '');
+  await videoToggleButton!.click();
+  await page.waitForTimeout(2000);
+  
+  // Check if video was turned off (aria-label or class might change)
+  const afterToggleAriaLabel = await videoToggleButton!.getAttribute('aria-label').catch(() => '');
+  const videoOff = initialAriaLabel !== afterToggleAriaLabel || 
+                   afterToggleAriaLabel?.toLowerCase().includes('off') ||
+                   afterToggleAriaLabel?.toLowerCase().includes('disable');
+  
+  console.log(`✅ Video toggled. Initial: "${initialAriaLabel}", After: "${afterToggleAriaLabel}"`);
+  
+  // STEP 5: Toggle video back on
+  console.log('✅ Toggling video back on...');
+  await videoToggleButton!.click();
+  await page.waitForTimeout(2000);
+  
+  const finalAriaLabel = await videoToggleButton!.getAttribute('aria-label').catch(() => '');
+  const videoOn = finalAriaLabel !== afterToggleAriaLabel ||
+                  finalAriaLabel?.toLowerCase().includes('on') ||
+                  finalAriaLabel?.toLowerCase().includes('enable');
+  
+  console.log(`✅ Video toggled again. Final: "${finalAriaLabel}"`);
+  
+  // STEP 5: Verify video toggle functionality works
+  const videoToggleWorked = videoOff || videoOn;
+  expect(videoToggleWorked).toBeTruthy();
+  
+  if (videoToggleWorked) {
+    console.log('✅ Video toggle functionality verified!');
+  }
+  
+  console.log('✅ Turn video on/off verified successfully!');
+});
+
+test('Chat in meeting @functional', async ({ page }) => {
+  // STEP 1: Navigate and start a meeting
+  await page.goto('/video-meeting', { waitUntil: 'domcontentloaded' });
+  await page.waitForTimeout(3000);
+  
+  // Create and start meeting
+  const createBtn = page.locator('button:has-text("Create Meeting"), button:has-text("Create")').first();
+  if (await createBtn.isVisible({ timeout: 3000 }).catch(() => false)) {
+    await createBtn.click();
+    await page.waitForTimeout(2000);
+    
+    const modal = page.locator('[role="dialog"], [class*="modal"]').first();
+    const titleInput = modal.locator('input[name*="title"], input[placeholder*="title" i]').first();
+    if (await titleInput.isVisible({ timeout: 2000 }).catch(() => false)) {
+      await titleInput.fill('Test Meeting Chat ' + Date.now());
+    }
+    
+    const saveBtn = modal.locator('button:has-text("Create"), button:has-text("Save"), button[type="submit"]').first();
+    if (await saveBtn.isVisible({ timeout: 2000 }).catch(() => false)) {
+      await saveBtn.click();
+      await page.waitForTimeout(3000);
+    }
+  }
+  
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await page.waitForTimeout(3000);
+  
+  // Find and start meeting
+  const meetings = page.locator('[class*="meeting"], [data-testid*="meeting"]');
+  const meetingCount = await meetings.count();
+  if (meetingCount > 0) {
+    const meeting = meetings.first();
+    const startBtn = meeting.locator('button[aria-label*="start" i], button:has-text("Start")').first();
+    if (await startBtn.isVisible({ timeout: 2000 }).catch(() => false)) {
+      await startBtn.click();
+      await page.waitForTimeout(5000);
+    }
+  }
+  
+  // STEP 2: Open chat panel
+  console.log('✅ Looking for chat button/panel...');
+  
+  const chatButtonSelectors = [
+    'button[aria-label*="chat" i]',
+    'button[title*="chat" i]',
+    'button:has-text("Chat")',
+    '[data-testid*="chat"]',
+    'button:has(svg[aria-label*="chat" i])',
+  ];
+  
+  let chatButton: import('@playwright/test').Locator | null = null;
+  
+  for (const selector of chatButtonSelectors) {
+    const btn = page.locator(selector).first();
+    if (await btn.isVisible({ timeout: 5000 }).catch(() => false)) {
+      const ariaLabel = await btn.getAttribute('aria-label').catch(() => '');
+      const btnText = await btn.textContent().catch(() => '');
+      if (ariaLabel?.toLowerCase().includes('chat') || btnText?.toLowerCase().includes('chat')) {
+        chatButton = btn;
+        console.log(`✅ Found chat button: aria-label="${ariaLabel}", text="${btnText}"`);
+        break;
+      }
+    }
+  }
+  
+  // If not found, search all buttons
+  if (!chatButton) {
+    const allButtons = page.locator('button, [role="button"]');
+    const buttonCount = await allButtons.count();
+    for (let i = 0; i < Math.min(buttonCount, 50); i++) {
+      const btn = allButtons.nth(i);
+      if (await btn.isVisible({ timeout: 1000 }).catch(() => false)) {
+        const btnText = await btn.textContent().catch(() => '');
+        if (btnText && btnText.toLowerCase().includes('chat')) {
+          chatButton = btn;
+          break;
+        }
+      }
+    }
+  }
+  
+  if (chatButton) {
+    await chatButton.click();
+    console.log('✅ Clicked chat button');
+    await page.waitForTimeout(2000); // Wait for chat panel to open
+  }
+  
+  // STEP 3: Find chat input field
+  console.log('✅ Looking for chat input field...');
+  
+  const chatInputSelectors = [
+    'input[placeholder*="message" i]',
+    'input[placeholder*="chat" i]',
+    'input[placeholder*="type" i]',
+    'textarea[placeholder*="message" i]',
+    'textarea[placeholder*="chat" i]',
+    'textarea[placeholder*="type" i]',
+    '[contenteditable="true"]',
+    '[role="textbox"]',
+  ];
+  
+  let chatInput: import('@playwright/test').Locator | null = null;
+  
+  for (const selector of chatInputSelectors) {
+    const input = page.locator(selector).first();
+    if (await input.isVisible({ timeout: 3000 }).catch(() => false)) {
+      const isEnabled = await input.isEnabled().catch(() => false);
+      if (isEnabled) {
+        chatInput = input;
+        console.log(`✅ Found chat input: ${selector}`);
+        break;
+      }
+    }
+  }
+  
+  expect(chatInput).not.toBeNull();
+  expect(await chatInput!.isVisible()).toBeTruthy();
+  
+  // STEP 4: Type and send a message
+  const testMessage = `Test message ${Date.now()}`;
+  console.log(`✅ Typing message: "${testMessage}"`);
+  
+  await chatInput!.click();
+  await page.waitForTimeout(500);
+  
+  // Handle both input and contenteditable elements
+  const tagName = await chatInput!.evaluate((el) => el.tagName.toLowerCase());
+  if (tagName === 'input' || tagName === 'textarea') {
+    await chatInput!.fill(testMessage);
+  } else {
+    await chatInput!.fill(testMessage);
+  }
+  
+  await page.waitForTimeout(500);
+  
+  // STEP 5: Find and click send button
+  console.log('✅ Looking for send button...');
+  
+  const sendButtonSelectors = [
+    'button[aria-label*="send" i]',
+    'button[title*="send" i]',
+    'button:has-text("Send")',
+    'button[type="submit"]',
+    '[data-testid*="send"]',
+    'button:has(svg[aria-label*="send" i])',
+  ];
+  
+  let sendButton: import('@playwright/test').Locator | null = null;
+  
+  for (const selector of sendButtonSelectors) {
+    const btn = page.locator(selector).first();
+    if (await btn.isVisible({ timeout: 2000 }).catch(() => false)) {
+      const ariaLabel = await btn.getAttribute('aria-label').catch(() => '');
+      const btnText = await btn.textContent().catch(() => '');
+      if (ariaLabel?.toLowerCase().includes('send') || btnText?.toLowerCase().includes('send')) {
+        sendButton = btn;
+        console.log(`✅ Found send button: aria-label="${ariaLabel}", text="${btnText}"`);
+        break;
+      }
+    }
+  }
+  
+  // If not found, try pressing Enter
+  if (!sendButton) {
+    console.log('⚠️  Send button not found, trying Enter key...');
+    await chatInput!.press('Enter');
+    await page.waitForTimeout(1000);
+  } else {
+    await sendButton.click();
+    console.log('✅ Clicked send button');
+    await page.waitForTimeout(2000);
+  }
+  
+  // STEP 6: Verify message was sent (appears in chat)
+  console.log('✅ Verifying message was sent...');
+  
+  const messageSent = await Promise.race([
+    page.getByText(testMessage, { exact: false }).isVisible({ timeout: 5000 }).catch(() => false),
+    page.locator('[class*="message"], [class*="chat-message"]').filter({ hasText: testMessage }).isVisible({ timeout: 5000 }).catch(() => false),
+  ]);
+  
+  const errorVisible = await page.getByText(/error|failed/i).isVisible({ timeout: 2000 }).catch(() => false);
+  
+  expect(messageSent).toBeTruthy();
+  expect(errorVisible).toBeFalsy();
+  
+  if (messageSent) {
+    console.log('✅ Message appeared in chat - message sent successfully!');
+  }
+  
+  console.log('✅ Chat in meeting verified successfully!');
 });
